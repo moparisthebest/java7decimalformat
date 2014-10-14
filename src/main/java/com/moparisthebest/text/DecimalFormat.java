@@ -36,25 +36,23 @@
  *
  */
 
-package java.text;
+package com.moparisthebest.text;
 
 import java.io.IOException;
 import java.io.InvalidObjectException;
 import java.io.ObjectInputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.text.*;
 import java.text.spi.NumberFormatProvider;
 import java.util.ArrayList;
 import java.util.Currency;
 import java.util.Locale;
-import java.util.ResourceBundle;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import sun.util.locale.provider.LocaleProviderAdapter;
-import sun.util.locale.provider.ResourceBundleBasedAdapter;
 
 /**
  * <code>DecimalFormat</code> is a concrete subclass of
@@ -378,7 +376,40 @@ import sun.util.locale.provider.ResourceBundleBasedAdapter;
  * @author       Mark Davis
  * @author       Alan Liu
  */
-public class DecimalFormat extends NumberFormat {
+public class DecimalFormat extends java.text.DecimalFormat {
+
+    public static final String DECIMAL_FORMAT_EXCEPTION = "com.moparisthebest.text.DecimalFormat will not function";
+    private static final FieldPosition dontCareFieldPositionInstance; // = DontCareFieldPosition.INSTANCE
+
+    private static final Class<?> resourceBundleBasedAdapter;
+    private static final Method getAdapter, getResourceBundleBased, getLocaleResources, getNumberPatterns;
+
+    static {
+        FieldPosition dcfpi = null;
+        Class<?> rbba = null;
+        Method ga = null, grbb = null, glr = null, gnp = null;
+        try {
+            final java.lang.reflect.Field instance = Class.forName("java.text.DontCareFieldPosition").getDeclaredField("INSTANCE");
+            instance.setAccessible(true);
+            dcfpi = (FieldPosition) instance.get(null);
+
+            final Class<?> localeProviderAdapter = Class.forName("sun.util.locale.provider.LocaleProviderAdapter");
+            rbba = Class.forName("sun.util.locale.provider.ResourceBundleBasedAdapter");
+            ga = localeProviderAdapter.getMethod("getAdapter", java.lang.Class.class, Locale.class);
+            grbb = localeProviderAdapter.getMethod("getResourceBundleBased");
+            glr = localeProviderAdapter.getMethod("getLocaleResources", Locale.class);
+            final Class<?> localeResources = Class.forName("sun.util.locale.provider.LocaleResources");
+            gnp = localeResources.getMethod("getNumberPatterns");
+        } catch (Throwable e) {
+            throw new RuntimeException(DECIMAL_FORMAT_EXCEPTION, e);
+        }
+        dontCareFieldPositionInstance = dcfpi;
+        resourceBundleBasedAdapter = rbba;
+        getAdapter = ga;
+        getResourceBundleBased = grbb;
+        getLocaleResources = glr;
+        getNumberPatterns = gnp;
+    }
 
     /**
      * Creates a DecimalFormat using the default pattern and symbols
@@ -399,11 +430,38 @@ public class DecimalFormat extends NumberFormat {
     public DecimalFormat() {
         // Get the pattern for the default locale.
         Locale def = Locale.getDefault(Locale.Category.FORMAT);
+        String[] all;
+        /*
+        // cannot use this code because javac refuses to let us use these classes...
         LocaleProviderAdapter adapter = LocaleProviderAdapter.getAdapter(NumberFormatProvider.class, def);
         if (!(adapter instanceof ResourceBundleBasedAdapter)) {
             adapter = LocaleProviderAdapter.getResourceBundleBased();
         }
         String[] all = adapter.getLocaleResources(def).getNumberPatterns();
+
+        // original prints:
+        // all: [#,##0.###;-#,##0.###, ¤#,##0.00;(¤#,##0.00), #,##0%]
+        // all[0]: #,##0.###;-#,##0.###
+        */
+        try {
+            // must recreate the above code using reflection, yuck
+            Object adapter = getAdapter.invoke(null, NumberFormatProvider.class, def);
+            if (!resourceBundleBasedAdapter.isInstance(adapter)) {
+                adapter = getResourceBundleBased.invoke(null);
+            }
+            all = (String[]) getNumberPatterns.invoke(getLocaleResources.invoke(adapter, def));
+        } catch (InvocationTargetException | IllegalAccessException e) {
+            throw new RuntimeException(DECIMAL_FORMAT_EXCEPTION, e);
+        }
+
+        /*
+        System.out.println("all: "+java.util.Arrays.toString(all));
+        System.out.println("all[0]: "+all[0]);
+
+        // reflection prints:
+        // all: [#,##0.###;-#,##0.###, ¤#,##0.00;(¤#,##0.00), #,##0%]
+        // all[0]: #,##0.###;-#,##0.###
+        */
 
         // Always applyPattern after the symbols are set
         this.symbols = DecimalFormatSymbols.getInstance(def);
@@ -464,50 +522,6 @@ public class DecimalFormat extends NumberFormat {
         applyPattern(pattern, false);
     }
 
-
-    // Overrides
-    /**
-     * Formats a number and appends the resulting text to the given string
-     * buffer.
-     * The number can be of any subclass of {@link java.lang.Number}.
-     * <p>
-     * This implementation uses the maximum precision permitted.
-     * @param number     the number to format
-     * @param toAppendTo the <code>StringBuffer</code> to which the formatted
-     *                   text is to be appended
-     * @param pos        On input: an alignment field, if desired.
-     *                   On output: the offsets of the alignment field.
-     * @return           the value passed in as <code>toAppendTo</code>
-     * @exception        IllegalArgumentException if <code>number</code> is
-     *                   null or not an instance of <code>Number</code>.
-     * @exception        NullPointerException if <code>toAppendTo</code> or
-     *                   <code>pos</code> is null
-     * @exception        ArithmeticException if rounding is needed with rounding
-     *                   mode being set to RoundingMode.UNNECESSARY
-     * @see              java.text.FieldPosition
-     */
-    @Override
-    public final StringBuffer format(Object number,
-                                     StringBuffer toAppendTo,
-                                     FieldPosition pos) {
-        if (number instanceof Long || number instanceof Integer ||
-                   number instanceof Short || number instanceof Byte ||
-                   number instanceof AtomicInteger ||
-                   number instanceof AtomicLong ||
-                   (number instanceof BigInteger &&
-                    ((BigInteger)number).bitLength () < 64)) {
-            return format(((Number)number).longValue(), toAppendTo, pos);
-        } else if (number instanceof BigDecimal) {
-            return format((BigDecimal)number, toAppendTo, pos);
-        } else if (number instanceof BigInteger) {
-            return format((BigInteger)number, toAppendTo, pos);
-        } else if (number instanceof Number) {
-            return format(((Number)number).doubleValue(), toAppendTo, pos);
-        } else {
-            throw new IllegalArgumentException("Cannot format given Object as a Number");
-        }
-    }
-
     /**
      * Formats a double to produce a string.
      * @param number    The double to format
@@ -525,7 +539,7 @@ public class DecimalFormat extends NumberFormat {
         // If fieldPosition is a DontCareFieldPosition instance we can
         // try to go to fast-path code.
         boolean tryFastPath = false;
-        if (fieldPosition == DontCareFieldPosition.INSTANCE)
+        if (fieldPosition == dontCareFieldPositionInstance)
             tryFastPath = true;
         else {
             fieldPosition.setBeginIndex(0);
@@ -541,7 +555,7 @@ public class DecimalFormat extends NumberFormat {
         }
 
         // if fast-path could not work, we fallback to standard code.
-        return format(number, result, fieldPosition.getFieldDelegate());
+        return format(number, result, new FieldDelegate(fieldPosition));
     }
 
     /**
@@ -643,7 +657,7 @@ public class DecimalFormat extends NumberFormat {
         fieldPosition.setBeginIndex(0);
         fieldPosition.setEndIndex(0);
 
-        return format(number, result, fieldPosition.getFieldDelegate());
+        return format(number, result, new FieldDelegate(fieldPosition));
     }
 
     /**
@@ -729,7 +743,7 @@ public class DecimalFormat extends NumberFormat {
                                 FieldPosition fieldPosition) {
         fieldPosition.setBeginIndex(0);
         fieldPosition.setEndIndex(0);
-        return format(number, result, fieldPosition.getFieldDelegate());
+        return format(number, result, new FieldDelegate(fieldPosition));
     }
 
     /**
@@ -783,7 +797,7 @@ public class DecimalFormat extends NumberFormat {
         fieldPosition.setBeginIndex(0);
         fieldPosition.setEndIndex(0);
 
-        return format(number, result, fieldPosition.getFieldDelegate(), false);
+        return format(number, result, new FieldDelegate(fieldPosition), false);
     }
 
     /**
@@ -1994,8 +2008,8 @@ public class DecimalFormat extends NumberFormat {
     @Override
     public Number parse(String text, ParsePosition pos) {
         // special case NaN
-        if (text.regionMatches(pos.index, symbols.getNaN(), 0, symbols.getNaN().length())) {
-            pos.index = pos.index + symbols.getNaN().length();
+        if (text.regionMatches(pos.getIndex(), symbols.getNaN(), 0, symbols.getNaN().length())) {
+            pos.setIndex(pos.getIndex() + symbols.getNaN().length());
             return new Double(Double.NaN);
         }
 
@@ -2140,8 +2154,8 @@ public class DecimalFormat extends NumberFormat {
                    String positivePrefix, String negativePrefix,
                    DigitList digits, boolean isExponent,
                    boolean status[]) {
-        int position = parsePosition.index;
-        int oldStart = parsePosition.index;
+        int position = parsePosition.getIndex();
+        int oldStart = parsePosition.getIndex();
         int backup;
         boolean gotPositive, gotNegative;
 
@@ -2164,7 +2178,7 @@ public class DecimalFormat extends NumberFormat {
         } else if (gotNegative) {
             position += negativePrefix.length();
         } else {
-            parsePosition.errorIndex = position;
+            parsePosition.setErrorIndex(position);
             return false;
         }
 
@@ -2271,7 +2285,7 @@ public class DecimalFormat extends NumberFormat {
 
                     if (subparse(text, pos, "", Character.toString(symbols.getMinusSign()), exponentDigits, true, stat) &&
                         exponentDigits.fitsIntoLong(stat[STATUS_POSITIVE], true)) {
-                        position = pos.index; // Advance past the exponent
+                        position = pos.getIndex(); // Advance past the exponent
                         exponent = (int)exponentDigits.getLong();
                         if (!stat[STATUS_POSITIVE]) {
                             exponent = -exponent;
@@ -2301,8 +2315,8 @@ public class DecimalFormat extends NumberFormat {
             // parse "$" with pattern "$#0.00". (return index 0 and error
             // index 1).
             if (!sawDigit && digitCount == 0) {
-                parsePosition.index = oldStart;
-                parsePosition.errorIndex = oldStart;
+                parsePosition.setIndex(oldStart);
+                parsePosition.setIndex(oldStart);
                 return false;
             }
         }
@@ -2329,19 +2343,19 @@ public class DecimalFormat extends NumberFormat {
 
         // fail if neither or both
         if (gotPositive == gotNegative) {
-            parsePosition.errorIndex = position;
+            parsePosition.setErrorIndex(position);
             return false;
         }
 
-        parsePosition.index = position +
-            (gotPositive ? positiveSuffix.length() : negativeSuffix.length()); // mark success!
+        parsePosition.setIndex(position +
+            (gotPositive ? positiveSuffix.length() : negativeSuffix.length())); // mark success!
         } else {
-            parsePosition.index = position;
+            parsePosition.setIndex(position);
         }
 
         status[STATUS_POSITIVE] = gotPositive;
-        if (parsePosition.index == oldStart) {
-            parsePosition.errorIndex = position;
+        if (parsePosition.getIndex() == oldStart) {
+            parsePosition.setErrorIndex(position);
             return false;
         }
         return true;

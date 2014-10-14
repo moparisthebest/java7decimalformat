@@ -22,8 +22,14 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-package java.text;
+package com.moparisthebest.text;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.text.AttributedCharacterIterator;
+import java.text.AttributedString;
+import java.text.Format;
 import java.util.ArrayList;
 
 /**
@@ -31,9 +37,28 @@ import java.util.ArrayList;
  * into a resulting <code>AttributedCharacterIterator</code>. The resulting
  * <code>AttributedCharacterIterator</code> can be retrieved by way of
  * the <code>getIterator</code> method.
- *
  */
-class CharacterIteratorFieldDelegate implements Format.FieldDelegate {
+class CharacterIteratorFieldDelegate extends FieldDelegate {
+
+    private static final Constructor<AttributedString> iterableConstructor;
+    private static final Method length;
+
+    static {
+        Constructor<AttributedString> cons = null;
+        Method l = null;
+        try {
+            cons = AttributedString.class.getDeclaredConstructor(AttributedCharacterIterator[].class);
+            cons.setAccessible(true);
+
+            l = AttributedString.class.getDeclaredMethod("length");
+            l.setAccessible(true);
+        } catch (NoSuchMethodException e) {
+            throw new RuntimeException(DecimalFormat.DECIMAL_FORMAT_EXCEPTION, e);
+        }
+        iterableConstructor = cons;
+        length = l;
+    }
+
     /**
      * Array of AttributeStrings. Whenever <code>formatted</code> is invoked
      * for a region > size, a new instance of AttributedString is added to
@@ -50,6 +75,7 @@ class CharacterIteratorFieldDelegate implements Format.FieldDelegate {
 
 
     CharacterIteratorFieldDelegate() {
+        super((Object)null);
         attributedStrings = new ArrayList<>();
     }
 
@@ -63,13 +89,19 @@ class CharacterIteratorFieldDelegate implements Format.FieldDelegate {
 
                 while (start < index) {
                     AttributedString as = attributedStrings.
-                                           get(asIndex--);
-                    int newIndex = index - as.length();
+                            get(asIndex--);
+                    int asLength;
+                    try {
+                        asLength = (Integer) length.invoke(as); // was: as.length();
+                    } catch (Throwable e) {
+                        throw new RuntimeException(DecimalFormat.DECIMAL_FORMAT_EXCEPTION, e);
+                    }
+                    int newIndex = index - asLength;
                     int aStart = Math.max(0, start - newIndex);
 
                     as.addAttribute(attr, value, aStart, Math.min(
-                                    end - start, as.length() - aStart) +
-                                    aStart);
+                            end - start, asLength - aStart) +
+                            aStart);
                     index = newIndex;
                 }
             }
@@ -119,6 +151,11 @@ class CharacterIteratorFieldDelegate implements Format.FieldDelegate {
             iterators[counter] = attributedStrings.
                                   get(counter).getIterator();
         }
-        return new AttributedString(iterators).getIterator();
+        try {
+            return iterableConstructor.newInstance(iterators).getIterator(); // was: new AttributedString(iterators).getIterator();
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+            throw new RuntimeException(DecimalFormat.DECIMAL_FORMAT_EXCEPTION, e);
+        }
+
     }
 }

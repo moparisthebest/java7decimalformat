@@ -36,7 +36,7 @@
  *
  */
 
-package java.text;
+package com.moparisthebest.text;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -62,12 +62,11 @@ import java.math.RoundingMode;
  * derived by placing all the digits of the list to the right of the
  * decimal point, by 10^exponent.
  *
- * @see  Locale
- * @see  Format
- * @see  NumberFormat
+ * @see  java.text.Format
+ * @see  java.text.NumberFormat
  * @see  DecimalFormat
- * @see  ChoiceFormat
- * @see  MessageFormat
+ * @see  java.text.ChoiceFormat
+ * @see  java.text.MessageFormat
  * @author       Mark Davis, Alan Liu
  */
 final class DigitList implements Cloneable {
