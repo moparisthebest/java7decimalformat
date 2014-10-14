@@ -15,6 +15,16 @@ To use this, replace your java.text.DecimalFormat usages with com.moparisthebest
     com.moparisthebest.text.DecimalFormat: 1.30
     java.text.DecimalFormat:               1.29
 
+Download
+--------
+You can download this from [maven central](https://repo.maven.apache.org/maven2/com/moparisthebest/text/java7decimalformat/1.0/java7decimalformat-1.0.jar) or of course just add it to your pom.xml:
+
+    <dependency>
+        <groupId>com.moparisthebest.text</groupId>
+        <artifactId>java7decimalformat</artifactId>
+        <version>1.0</version>
+    </dependency>
+
 License
 -------
 
